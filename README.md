@@ -66,9 +66,27 @@ java -Djava.library.path=build/native -jar build/libs/MultiMonumentFinder-1.1.ja
 java -Djava.library.path=build/native -cp "build/classes/java/main;build/classes/java/test" project.MonumentNativeSmokeTest
 ```
 
-Optional args / 可选参数：`seed minX maxX minZ maxZ pairLevel biomeCheck minGroupArea dualAfk`
-(e.g. `... project.MonumentNativeSmokeTest 123 -2 2 -2 2 3 true 6728 true` for a dual-dummy triple search; pass `0` for the built-in default threshold; the test prints CSV columns `x1,z1,x2,z2,area_dual,area_single,area_max,gate_x,gate_z,sx,sz,count,dx,dz,dual`).
-例如：`... 123 -2 2 -2 2 3 true 6728 true` 表示三连双假人搜索（阈值传 0 用内置默认；测试输出 CSV 列 `x1,z1,x2,z2,area_dual,area_single,area_max,gate_x,gate_z,sx,sz,count,dx,dz,dual`）。
+Optional args / 可选参数：`seed minX maxX minZ maxZ pairLevel biomeCheck minGroupArea searchModes filterMode`
+(`searchModes` is a bitmask: 1 = single dummy, 2 = dual dummy, 4 = single gate; `filterMode` is the area the threshold compares: 0 = single, 1 = dual, 2 = gate. e.g. `... 123 -2 2 -2 2 3 true 6728 2 1` = dual-dummy triple search filtered on the dual area; `minGroupArea 0` disables the filter.)
+（`searchModes` 为位掩码：1 单假人、2 双假人、4 单门；`filterMode` 指定阈值比较的面积：0 单人、1 双人、2 单门。例如 `... 123 -2 2 -2 2 3 true 6728 2 1` 表示三连双假人搜索、按并集面积卡阈值；`minGroupArea` 传 0 表示不过滤。）
+
+---
+
+## Solver validation / 求解器验证
+
+`tools/validate_afk.c` re-derives every reported number by brute force (per-block disk tests and per-window sums), so a regression in the field/sliding-window machinery is caught without trusting the solver. It also sweeps **all 729 16-aligned two-box distances exhaustively** (the prefilter bound is exact for two boxes) plus non-aligned samples:
+
+```bash
+# Windows (MSYS2), from the repository root:
+gcc -O2 -I. -Icubiomes tools/validate_afk.c monument_search_core.c -o validate_afk \
+    -Lbuild/cubiomes -lcubiomes_static -lm
+./validate_afk            # 400 random groups + fixed shapes
+./validate_afk 2000       # more groups
+```
+
+Properties checked: single-point honest re-evaluation, `dual >= single`, the 256-span constraint, `reaches()` agreeing with the exact optimum, determinism, a hill climb never beating the solver, the ceiling equalling the brute-force 257-window maximum, `ceiling >= dual >= single`, the gate prefilter bound covering the brute ceiling (`ceiling <= monument_group_upper_bound <= n*ax*az`), and the gate centre staying inside the group extent. Exit code 0 = all hold.
+
+`tools/validate_afk.c` 用暴力法（逐格 disk 判定 + 逐窗口求和）独立重算每个输出，不依赖求解器自身：单点回代、`dual >= single`、256 跨度约束、`reaches()` 与精确值一致、确定性、爬山不超越求解器、上限等于 257 窗口暴力最大值、`ceiling >= dual >= single`、门剪枝上界覆盖暴力天花板（`ceiling <= monument_group_upper_bound <= n*ax*az`）、门中心落在组范围内。退出码 0 表示全部成立。
 
 ---
 
@@ -114,6 +132,9 @@ Default thread count is the number of CPU cores (capped at runtime). If you ente
 | Option     | **找到符合条件的多连时立即暂停**                       | **Pause immediately when a valid pair is found** |
 | Option     | **群系检查**                                 | **Biome check**                                  |
 
+> Pausing applies to every accepted result: for 2-monument pairs low-efficiency pairs are skipped, for 3/4-monument groups each accepted row triggers the pause. The pause is applied by the native search itself, so the UI switches to **继续 / Resume**.
+> 暂停对每条被接受的结果都生效：2 连会跳过低效对，3/4 连则是每条输出的组都会触发；暂停由原生搜索自身完成，界面会切换成 **继续**。
+
 - Result format / 结果格式：the results panel is a **table** whose column header stays pinned while you scroll; **drag a header to reorder the columns** and use **列… / Columns…** to show/hide them. One row per hit, nine columns by default in this order — `单假人最优坐标 / 单假人最优面积 / 海洋群系类型 / 相邻神殿数 / 假人1坐标 / 假人2坐标 / 双假人最优面积 / 单门面积上限 / 单门地狱门坐标`. Points are plain `x z` numbers (no `/tp`, no `x 50 z`), the level is a bare number (no brackets), and there are no `面积=`-style labels - the header names the columns. Cells that do not apply (single-point mode has no second dummy; biome check off has no ocean type) show `-`. The batch tab prefixes a `种子 / Seed` column. The **列… / Columns…** picker sets what the table shows, and the text/CSV exports follow it (including the dragged order); its "Include header row in CSV" option applies to CSV only. Select rows and press **Ctrl+C** to copy them as tab-separated text (the column header is prepended); right-click for Copy all / Select all.  
   结果面板是一个**表格**：列头固定，滚动时始终可见；每命中一条占一行，固定 9 列并按下述顺序排列——`单假人最优坐标 / 单假人最优面积 / 海洋群系类型 / 相邻神殿数 / 假人1坐标 / 假人2坐标 / 双假人最优面积 / 单门面积上限 / 单门地狱门坐标`。坐标只写 `x z`（不带 `/tp`、不带 `x 50 z`），连数是纯数字（不带括号），也没有 `面积=` 之类的前缀——列名由表头给出。不适用的格子（单点模式没有第二假人、未开群系检查没有海洋类型）显示 `-`。批量页在最前面多一列 `种子`。**列…** 按钮选择显示哪些列，TXT/CSV 导出与之一致（连拖动后的顺序也一致）；其中的“CSV 包含表头行”只影响 CSV。选中行按 **Ctrl+C** 复制（会自动带上列头），右键菜单提供“复制全部 / 全选”。
 - **CSV export / CSV 导出**：**导出CSV** writes exactly the columns currently shown in the table (drag order included) plus an optional header row; use **列… / Columns…** to change the set, so partial exports are one click away.  
@@ -149,6 +170,7 @@ The batch tab also provides **Pair Level** and **Min Usable Area** settings (sam
 |-------------------------------------- ------------|--------------------------------------------------------------------------------------------------------------------------------|
 | `src/main/java/project/`                         | Swing UI (`DoubleMonumentForFixedSeed`), JNI bridge (`MonumentFinderBridge`), runner (`MonumentSearchRunner`) / 界面、JNI 桥接、搜索编排 |
 | `src/test/java/project/`                         | JNI smoke test (`MonumentNativeSmokeTest`) / JNI 冒烟测试 |
+| `tools/validate_afk.c`                           | Brute-force property validation for the AFK solvers / 求解器属性验证（暴力对拍） |
 | `src/main/resources/messages_*.properties`       | UI i18n strings (zh_CN / en_US) / 界面国际化文案                                                                                      |
 | `monument_search.cpp` / `monument_search_core.c` | C++ search and cubiomes calls / C++ 搜索与 cubiomes 调用                                                                            |
 | `jni/`                                           | JNI glue and CMake target `monumentFinderLibJ`                                                                                 |

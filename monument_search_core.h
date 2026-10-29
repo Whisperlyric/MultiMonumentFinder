@@ -140,6 +140,17 @@ int monument_group_max_area(
     int *outX,
     int *outZ);
 
+/** Cheap upper bound for {@link monument_group_max_area}: min over anchor boxes of the sum of
+ *  exact two-box ceilings G2 = ax*az + ox(|dx|)*oz(|dz|), where ox(d) = ax when d <= 256-ax and
+ *  otherwise max(0, 257-d) (the largest x-overlap a 257-wide window containing the anchor box can
+ *  have with the other box; x- and z-windows are chosen independently). Exact for n = 2, a valid
+ *  upper bound for larger n (plus the trivial n*ax*az cap). O(n^2), no sliding window. */
+int monument_group_upper_bound(
+    const MonumentBlockPos *p,
+    int n,
+    int ax,
+    int az);
+
 /** Build the pairwise joint-coverage upper-bound table once (call before 3/4 searches). */
 void monument_ensure_pair_upper_bounds(void);
 

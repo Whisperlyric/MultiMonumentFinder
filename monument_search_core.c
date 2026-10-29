@@ -1329,6 +1329,49 @@ int monument_group_max_area(
     return best;
 }
 
+// Cheap upper bound for the ceiling, used to prefilter gate-threshold searches without running
+// the sliding window. Per axis, the largest overlap a 257-wide window CONTAINING the anchor box
+// can have with another box whose centre-line distance is d: the whole box when d <= 256-ax,
+// otherwise the residual columns (window pushed as far towards the other box as containment
+// allows), clamped at 0. X- and Z-windows are chosen independently, and for two boxes the
+// "contain the anchor" combination dominates every other window placement because
+// (fullX - ox) * (fullZ - oz) >= 0 - so G2 = ax*az + ox*oz is the exact two-box ceiling, and
+// for any window W: sum_i f_i(W) <= min_j sum_{i!=j} G2(dist_ij) - (n-2) f_j(W) <= the min-j sum.
+int monument_group_upper_bound(const MonumentBlockPos *p, int n, int ax, int az)
+{
+    if (!p || n < 1 || ax <= 0 || az <= 0)
+        return 0;
+
+    const int win = DUAL_SPAN_LIMIT + 1; // 257 columns: max-min <= 256
+    const int fullX = ax < win ? ax : win;
+    const int fullZ = az < win ? az : win;
+    const int limX = win - ax > 0 ? win - ax : 0; // distances up to this still allow full overlap
+    const int limZ = win - az > 0 ? win - az : 0;
+
+    long long best = -1;
+    for (int j = 0; j < n; j++) { // anchor box
+        long long sum = 0;
+        int have = 0;
+        for (int i = 0; i < n; i++) {
+            if (i == j)
+                continue;
+            const long long dx = p[i].x > p[j].x ? p[i].x - p[j].x : p[j].x - p[i].x;
+            const long long dz = p[i].z > p[j].z ? p[i].z - p[j].z : p[j].z - p[i].z;
+            const int ox = dx <= limX ? fullX : (dx < win ? win - (int) dx : 0);
+            const int oz = dz <= limZ ? fullZ : (dz < win ? win - (int) dz : 0);
+            sum += (long long) fullX * fullZ + (long long) ox * oz;
+            have = 1;
+        }
+        if (have && (best < 0 || sum < best))
+            best = sum;
+    }
+
+    const long long trivial = (long long) n * ax * az;
+    if (best < 0 || trivial < best)
+        best = trivial;
+    return (int) best;
+}
+
 // ==================== pairwise joint-coverage upper bound table ====================
 
 // Structure positions are always 16-aligned, so pairwise block distances are multiples of 16 and <= 336 (group adjacency bound, see GROUP_LINK_DIST_SQ in monument_search.cpp); discretize as idx = dist/16.

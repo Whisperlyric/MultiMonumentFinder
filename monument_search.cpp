@@ -141,6 +141,11 @@ void emitGroup(SearchContext &ctx, const MonumentBlockPos *pts, int nn)
             return;
         if (filterMode == 1 && 2 * bound <= areaMin)
             return;
+        // gate ceiling: the pairwise two-box-ceiling bound (exact for 2 boxes, valid for more)
+        // rejects most hopeless groups without running the O(W*H) sliding window
+        if (filterMode == 2 &&
+            monument_group_upper_bound(pts, nn, MONUMENT_BOX, MONUMENT_BOX) <= areaMin)
+            return;
     }
 
     int minX = pts[0].x, maxX = pts[0].x, minZ = pts[0].z, maxZ = pts[0].z;
@@ -214,11 +219,6 @@ void emitGroup(SearchContext &ctx, const MonumentBlockPos *pts, int nn)
         pass = areaMax > areaMin;
     if (!pass)
         return;
-
-    // the row always carries the ceiling column
-    if (areaMax == 0) {
-        areaMax = monument_group_max_area(pts, nn, MONUMENT_BOX, MONUMENT_BOX, &areaMaxX, &areaMaxZ);
-    }
 
     PairHit hit;
     if (dualBetter) {
