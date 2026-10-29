@@ -215,6 +215,40 @@ void emitGroup(SearchContext &ctx, const MonumentBlockPos *pts, int nn)
         }
     }
 
+    // Single-dummy pseudo-group filter (basis = single): removing any member must strictly
+    // shrink the single-point area, otherwise the group is effectively a smaller one that is
+    // reported again with a larger count. Same rule the dual path applies to its union.
+    bool singleKeep = true;
+    if (filterMode == 0 && nn >= 3) {
+        for (int skip = 0; skip < nn && singleKeep; skip++) {
+            MonumentBlockPos sub[3];
+            int m = 0;
+            long long subBound = 0;
+            for (int i = 0; i < nn; i++) {
+                if (i == skip)
+                    continue;
+                sub[m++] = pts[i];
+            }
+            for (int i = 0; i < m; i++) {
+                int bm = INT_MAX;
+                for (int j = 0; j < m; j++) {
+                    if (j == i)
+                        continue;
+                    int dx = std::abs(sub[i].x - sub[j].x);
+                    int dz = std::abs(sub[i].z - sub[j].z);
+                    int ub = monument_pair_upper_bound(dx, dz);
+                    if (ub < bm)
+                        bm = ub;
+                }
+                subBound += bm;
+            }
+            if (subBound < singleArea)
+                continue; // the subset cannot reach the group area: the member surely contributes
+            if (monument_afk_coverage(sub, m, MONUMENT_BOX, MONUMENT_BOX, nullptr, nullptr) >= singleArea)
+                singleKeep = false; // removed member adds nothing: pseudo-group
+        }
+    }
+
     // Single-gate ceiling when requested.
     int areaMax = 0, areaMaxX = 0, areaMaxZ = 0;
     if (wantGate) {
@@ -224,9 +258,9 @@ void emitGroup(SearchContext &ctx, const MonumentBlockPos *pts, int nn)
     // Acceptance: only the selected area type is compared against the threshold.
     bool pass;
     if (areaMin <= 0)
-        pass = true;
+        pass = filterMode != 0 || singleKeep; // filter off still drops single-mode pseudo-groups
     else if (filterMode == 0)
-        pass = singleArea > areaMin;
+        pass = singleKeep && singleArea > areaMin;
     else if (filterMode == 1)
         pass = dualBetter && dualArea > areaMin;
     else
