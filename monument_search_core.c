@@ -226,6 +226,7 @@ typedef struct {
     int x0, z0, w, h;
     int ax, az;
     int best;
+    int bestX, bestZ; // first cell attaining the strict maximum (exact fallback)
     int sumn;
     int64_t sumx, sumz;
 } AfkMeta;
@@ -281,6 +282,8 @@ static void afk_flood(AfkMeta *d, int sx, int sz)
         if (q >= d->best) {
             if (q > d->best) {
                 d->best = q;
+                d->bestX = d->x0 + x;
+                d->bestZ = d->z0 + z;
                 d->sumn = 1;
                 d->sumx = d->x0 + x;
                 d->sumz = d->z0 + z;
@@ -362,6 +365,11 @@ static void afk_coverage_exact(
         return;
     }
 
+    // exact argmax cell, kept as the fallback for the tie-averaged centre: the average of a
+    // non-convex plateau can sit a ring outside it, covering fewer blocks than `best`
+    const int argX = x0 + bIdx % w;
+    const int argZ = z0 + bIdx / w;
+
     // average only the plateau of globally optimal cells connected to bIdx (disconnected maxima must not be merged into the same point)
     int64_t sumx = 0;
     int64_t sumz = 0;
@@ -399,6 +407,10 @@ static void afk_coverage_exact(
 
     out->x = (int) lround((double) sumx / sumn);
     out->z = (int) lround((double) sumz / sumn);
+    if (afk_blocks_in_range(p, n, out->x, out->z, ax, az) < best) {
+        out->x = argX; // averaged centre drifted off the plateau: report an exact optimum cell
+        out->z = argZ;
+    }
     *outCnt = best;
 }
 
@@ -490,6 +502,8 @@ int monument_afk_coverage(
             break;
 
         d.best = vmax;
+        d.bestX = dsp[jmax].x; // the seed cell attains vmax: exact fallback if no strict gain
+        d.bestZ = dsp[jmax].z;
         d.sumn = 0;
         d.sumx = 0;
         d.sumz = 0;
@@ -498,6 +512,10 @@ int monument_afk_coverage(
             cnt = d.best;
             afk.x = (int) lround((double) d.sumx / d.sumn);
             afk.z = (int) lround((double) d.sumz / d.sumn);
+            if (afk_blocks_in_range(p, n, afk.x, afk.z, ax, az) < cnt) {
+                afk.x = d.bestX; // averaged centre drifted off the plateau
+                afk.z = d.bestZ;
+            }
             if (cnt >= (n - 1) * ax * az)
                 break;
         }

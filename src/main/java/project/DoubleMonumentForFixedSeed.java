@@ -1555,11 +1555,13 @@ public class DoubleMonumentForFixedSeed extends JFrame {
     /** Writes the columns currently shown in {@code table}, in display order. */
     private void writeCsv(JTable table, boolean includeHeader, File file) {
         StringBuilder sb = new StringBuilder();
+        // UTF-8 BOM: without it Excel on Chinese Windows reads the (Chinese) header as ANSI
+        sb.append('\uFEFF');
         if (includeHeader) {
-            sb.append(ResultTable.csvHeader(table)).append('\n');
+            sb.append(ResultTable.csvHeader(table)).append("\r\n");
         }
         for (int row = 0; row < table.getRowCount(); row++) {
-            sb.append(ResultTable.csvRow(table, row)).append('\n');
+            sb.append(ResultTable.csvRow(table, row)).append("\r\n");
         }
         try (PrintWriter writer = new PrintWriter(new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8))) {
             writer.print(sb);

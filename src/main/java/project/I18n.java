@@ -79,9 +79,11 @@ public final class I18n {
         String d1 = x + " " + z;
         String d2 = dual ? x2 + " " + z2 : "-";
         String dualArea = dual ? String.valueOf(area) : "-";
+        // the ceiling (and therefore the gate) is only known when the gate mode / gate filter ran
+        String areaMaxText = areaMax > 0 ? String.valueOf(areaMax) : "-";
         // nether side of the single gate: overworld coordinates / 8 (floor division)
-        String gate = (areaMaxX >> 3) + " " + (areaMaxZ >> 3);
+        String gate = areaMax > 0 ? (areaMaxX >> 3) + " " + (areaMaxZ >> 3) : "-";
         return String.join("\t", String.valueOf(seed), singlePoint, String.valueOf(singleArea),
-                ocean, String.valueOf(count), d1, d2, dualArea, String.valueOf(areaMax), gate);
+                ocean, String.valueOf(count), d1, d2, dualArea, areaMaxText, gate);
     }
 }
