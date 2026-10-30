@@ -780,10 +780,22 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
         squareSideField = new JTextField(String.valueOf(DEFAULT_SQUARE_SIDE), 20);
+        squareSideField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                applySquareSideToBounds();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                applySquareSideToBounds();
+            }
+
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                applySquareSideToBounds();
+            }
+        });
         squareSideField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(squareSideField, getString("label.squareSide"));
-                applySquareSideToBounds(); // 失焦时同步一次；正式开始搜索前还会再取一次
             }
         });
         inputPanel.add(squareSideField, gbc);
@@ -1163,7 +1175,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
             minZField.setText(String.valueOf((int) min));
             maxZField.setText(String.valueOf((int) max));
             squareSideUpdating = false;
-            // 只改数值，不触发参数变更检查：暂停中的搜索不能被打字打断
+            checkSearchParameterChange();
         } catch (NumberFormatException ignored) {
             // 等待输入完整整数
         }
@@ -1459,9 +1471,6 @@ public class DoubleMonumentForFixedSeed extends JFrame {
                 }
             }
             
-            // 正方形模式：开始搜索时才把边长换算成 Min/Max（打字过程中不改输入框）
-            applySquareSideToBounds();
-
             String minXText = minXField.getText().trim();
             String maxXText = maxXField.getText().trim();
             String minZText = minZField.getText().trim();
@@ -2189,10 +2198,22 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.weightx = 1.0;
         batchSquareSideField = new JTextField(String.valueOf(BATCH_DEFAULT_SQUARE_SIDE), 20);
+        batchSquareSideField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {
+                applyBatchSquareSideToBounds();
+            }
+
+            public void removeUpdate(javax.swing.event.DocumentEvent e) {
+                applyBatchSquareSideToBounds();
+            }
+
+            public void insertUpdate(javax.swing.event.DocumentEvent e) {
+                applyBatchSquareSideToBounds();
+            }
+        });
         batchSquareSideField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(batchSquareSideField, getString("label.squareSide"));
-                applyBatchSquareSideToBounds(); // 失焦时同步一次；正式开始搜索前还会再取一次
             }
         });
         inputPanel.add(batchSquareSideField, gbc);
@@ -2385,9 +2406,6 @@ public class DoubleMonumentForFixedSeed extends JFrame {
                 }
             }
             
-            // 正方形模式：开始搜索时才把边长换算成 Min/Max（打字过程中不改输入框）
-            applyBatchSquareSideToBounds();
-
             String minXText = batchMinXField.getText().trim();
             String maxXText = batchMaxXField.getText().trim();
             String minZText = batchMinZField.getText().trim();
