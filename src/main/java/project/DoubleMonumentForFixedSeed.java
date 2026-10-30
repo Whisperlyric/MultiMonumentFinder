@@ -113,6 +113,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
     private JButton searchPauseButton;
     private JButton searchStopButton;
     private JButton searchResetButton;
+    private JLabel searchAfkHintLabel;
     private JButton searchExportButton;
     private JButton searchCsvButton;
     private JButton searchSortButton;
@@ -160,6 +161,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
     private JButton batchPauseButton;
     private JButton batchStopButton;
     private JButton batchResetButton;
+    private JLabel batchAfkHintLabel;
     private JButton batchExportFullButton;
     private JButton batchExportSeedsButton;
     private JButton batchCsvButton;
@@ -353,7 +355,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         int prevIndex = combo.getSelectedIndex();
         combo.removeAllItems();
         combo.addItem(getString("pairLevel.2"));
-        combo.addItem(getString("pairLevel.3"));
+        combo.addItem(getString("pairLevel.34"));
         combo.addItem(getString("pairLevel.4"));
         if (prevIndex >= 0 && prevIndex <= 2) {
             combo.setSelectedIndex(prevIndex);
@@ -947,7 +949,13 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         exportSortPanel.add(searchColumnsButton);
         exportSortPanel.add(searchSortButton);
         searchRightPanel.add(scrollPane, BorderLayout.CENTER);
-        searchRightPanel.add(exportSortPanel, BorderLayout.SOUTH);
+        searchAfkHintLabel = new JLabel(getString("hint.afkPoint"));
+        searchAfkHintLabel.setFont(getLoadedFont().deriveFont(Font.PLAIN, 11f));
+        searchAfkHintLabel.setForeground(new Color(0x9A, 0x9A, 0x9A));
+        JPanel searchSouthPanel = new JPanel(new BorderLayout());
+        searchSouthPanel.add(exportSortPanel, BorderLayout.NORTH);
+        searchSouthPanel.add(searchAfkHintLabel, BorderLayout.SOUTH);
+        searchRightPanel.add(searchSouthPanel, BorderLayout.SOUTH);
         // keep the split pane from squeezing the export row out of the panel
         searchRightPanel.setMinimumSize(new Dimension(140, 140));
         scrollPane.setMinimumSize(new Dimension(0, 0));
@@ -2308,7 +2316,13 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         exportSortPanel.add(batchColumnsButton);
         exportSortPanel.add(batchSortButton);
         batchRightPanel.add(scrollPane, BorderLayout.CENTER);
-        batchRightPanel.add(exportSortPanel, BorderLayout.SOUTH);
+        batchAfkHintLabel = new JLabel(getString("hint.afkPoint"));
+        batchAfkHintLabel.setFont(getLoadedFont().deriveFont(Font.PLAIN, 11f));
+        batchAfkHintLabel.setForeground(new Color(0x9A, 0x9A, 0x9A));
+        JPanel batchSouthPanel = new JPanel(new BorderLayout());
+        batchSouthPanel.add(exportSortPanel, BorderLayout.NORTH);
+        batchSouthPanel.add(batchAfkHintLabel, BorderLayout.SOUTH);
+        batchRightPanel.add(batchSouthPanel, BorderLayout.SOUTH);
         // keep the split pane from squeezing the export row out of the panel
         batchRightPanel.setMinimumSize(new Dimension(140, 140));
         scrollPane.setMinimumSize(new Dimension(0, 0));
@@ -2958,6 +2972,12 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         }
         if (biomeCheckCheckBox != null) {
             biomeCheckCheckBox.setText(getString("check.biomeCheck"));
+        }
+        if (searchAfkHintLabel != null) {
+            searchAfkHintLabel.setText(getString("hint.afkPoint"));
+        }
+        if (batchAfkHintLabel != null) {
+            batchAfkHintLabel.setText(getString("hint.afkPoint"));
         }
         if (searchMinAreaCheckBox != null) {
             searchMinAreaCheckBox.setText(getString("check.minArea"));

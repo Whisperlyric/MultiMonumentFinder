@@ -128,7 +128,7 @@ The search area is measured in regions: `(MaxX - MinX) × (MaxZ - MinZ)`. If the
 | Seed       | **种子**                                   | **Seed**                                         |
 | Threads    | **线程数**                                  | **Thread Count**                                 |
 | Version    | **版本** (1.18~26.3+，仅一个选项)              | **Version** (1.18~26.3+, single option)          |
-| Pair Level | **相邻神殿数** (2 / 3 / 4)                    | **Pair Level**                                   |
+| Pair Level | **相邻神殿组** (2 / 3,4 / 4)               | **Group size** (2 / 3,4 / 4)                     |
 | Min Area   | **最小可用面积（可选）** + 面积类型下拉（单人/双人/单门最小面积） | **Min usable area (optional)** + area type (single / dual / gate) |
 | Search mode| **搜索单假人 / 搜索双假人 / 搜索单门**（可多选：决定计算哪些面积，仅 3/4 连） | **Single dummy / Dual dummy / Single gate** (multi-select: which areas to compute, 3/4 only) |
 | Region     | **MinX / MaxX / MinZ / MaxZ (×512)**     | same                                             |
@@ -157,7 +157,10 @@ The search area is measured in regions: `(MaxX - MinX) × (MaxZ - MinZ)`. If the
   **`单门可利用面积上限`（`area_max`）**：假人数不限、但**仍受 max−min ≤ 256 footprint 约束**时该组能取得的刷怪面积上限——即任意 257×257 方块窗口内 box 方块数的最大值（多重集计数，用二维前缀和滑窗精确求出）。它只是参考天花板，1/2 个假人不一定达到：`面积单门 ≤ 面积双门 ≤ area_max ≤ 连数×3364`（2/3/4 连分别为 6728 / 10092 / 13456；若该组所有 box 本来就装得进一个 footprint，则 `area_max = 连数×3364`）。2 连必然装得下，故其 `area_max` 恒为 6728。
 - **`单门地狱门坐标` / gate portal**：the nether-side `x z` for that ceiling footprint — the **centre of the winning 257×257 window**, converted with Minecraft's overworld→nether rule `nether = overworld / 8` (floor). Build/link the portal at these coordinates so its overworld exit lands in the middle of the ceiling farm; the table columns are `(x, z)` only (no `y`, no `/tp`).  
   **`单门地狱门坐标`**：该上限 footprint 对应的**下界**侧 `x z`——取「胜出 257×257 窗口的中心」，按 Minecraft 的主世界→下界规则 `下界 = 主世界 / 8`（向下取整）换算。在这两个坐标建门/连门，主世界出口就落在该上限农场的中心；表格只给 `x z`（不含 `y`，不带 `/tp`）。
+- **AFK point hint / 鸡血点提示**：the results panels show a hint that the marked AFK point is only the **geometric optimum**; when actually building the farm you also need to consider the 鸡血点 (jixue point).  
+  结果面板底部有提示：标注的挂机点仅为**几何最优**，实际搭建还需考虑鸡血点。
 - **Triple & quadruple search / 3/4 连搜索说明**：group members are at most 336 blocks apart and must pass deep-ocean biome sampling before the shared AFK area is computed; the usable area must strictly exceed the "Min Usable Area" threshold or the group is dropped (threshold applies to level 3/4 only, allowed range 6728~13455, invalid input pops a dialog and blocks the search).  
+  **3,4 模式**：相邻神殿组选 **3,4** 时一次搜索同时报告三连与四连——每个极大互链组只输出一行（count 列如实标 3 或 4）；嵌入四连的三子组不再单独出现，避免同一四连刷出 4 条重复三连。选 **4** 则只报告四连。
   成员间中心距 ≤ 336、且通过深海群系采样后才计算共享挂机面积；可用面积须严格大于「最小可用面积」阈值，不达标的组合会被剔除（阈值仅对 3/4 连生效，允许范围 6728~13455，非法输入会弹窗阻止搜索）。
 - **Search modes / 搜索模式** (3/4 only, any combination): the switches decide **which areas are computed** — **搜索单假人** the single-point optimum, **搜索双假人** the two-point union (span ≤ 256), **搜索单门** the unlimited-dummy ceiling in one 257×257 footprint. The **area-type dropdown decides which of those areas the threshold applies to**; a group is reported only when *that* area passes (not "any of them"). The other computed areas are still filled into the row, e.g. with all three enabled and the dropdown on *single*, a group whose single area passes is reported with its dual points and ceiling alongside.
   **搜索模式**（仅 3/4 连，可任意多选）：三个开关决定**算哪些面积**——**搜索单假人** 算单点最优面积、**搜索双假人** 算双点并集（跨度 ≤256）、**搜索单门** 算一个 257×257 footprint 内不限人数的上限。**面积类型下拉决定阈值作用在哪种面积上**，只有该面积达标才输出（不是“任一达标”）。其余已算出的面积照样填进行里：例如三个都勾、下拉选“单人最小面积”，单点达标就会输出，同时带出双假人坐标与单门上限。
