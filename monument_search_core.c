@@ -234,6 +234,9 @@ int monument_classify_ocean_type(
 
 // AFK position attracts (keeps alive) every spawning block within euclidean distance 128 on the horizontal plane.
 static const double AFK_RSQ = 128.0 * 128.0;
+// spawn-ring inner edge: blocks within 24 blocks of the AFK point do not spawn and are
+// NOT counted - every area figure in this file is the 24..128 ring count
+static const double AFK_INNER_RSQ = 24.0 * 24.0;
 
 // getStructurePos returns the region chunk corner; the 58x58 box spans [pos-29, pos+28] (centre = pos, in-game verified 2026-08-28). Area is anchor-invariant but the reported AFK point is only correct with this anchor.
 #define AFK_BOX_LO(ax) (-(((ax) + 1) / 2))         // -29 for 58
@@ -267,7 +270,8 @@ static int afk_blocks_in_range(
             for (int pz = 0; pz < az; pz++) {
                 double ddx = px + dx;
                 double ddz = pz + dz;
-                cnt += (ddx * ddx + ddz * ddz <= AFK_RSQ);
+                cnt += (ddx * ddx + ddz * ddz <= AFK_RSQ) &&
+                        (ddx * ddx + ddz * ddz >= AFK_INNER_RSQ);
             }
         }
     }
@@ -336,9 +340,13 @@ static void afk_coverage_exact(
     int *outCnt)
 {
     const int RMAX = 128;
+    const int RIN = 24;
     int rt[2 * RMAX + 1];
+    int rtIn[2 * RIN + 1];
     for (int dz = -RMAX; dz <= RMAX; dz++)
         rt[dz + RMAX] = (int) sqrt((double) RMAX * RMAX - (double) dz * dz);
+    for (int dz = -RIN; dz <= RIN; dz++)
+        rtIn[dz + RIN] = (int) sqrt((double) RIN * RIN - (double) dz * dz);
 
     int *cov = (int *) malloc(sizeof(int) * (size_t) w * (size_t) h);
     int *stack = (int *) malloc(sizeof(int) * (size_t) w * (size_t) h);
@@ -365,6 +373,12 @@ static void afk_coverage_exact(
                     int lo = px - R > bx ? px - R : bx;
                     int hi = px + R < bx1 ? px + R : bx1;
                     crow[px - x0] += hi - lo + 1;
+                    // spawn-ring inner edge: the 24-disk around the point does not spawn
+                    int rIn = rtIn[(pz - rowz) + RIN];
+                    int slo = px - rIn > bx ? px - rIn : bx;
+                    int shi = px + rIn < bx1 ? px + rIn : bx1;
+                    if (slo <= shi)
+                        crow[px - x0] -= shi - slo + 1;
                 }
             }
         }
@@ -563,11 +577,12 @@ int monument_afk_coverage(
 //   its exact union come from one coverage field built with a's disk subtracted.
 
 #define DUAL_DISK_R 128
+#define DUAL_INNER_R 24
 
-static void dual_rt_build(int *rt)
+static void dual_rt_build(int *rt, int R)
 {
-    for (int dz = -DUAL_DISK_R; dz <= DUAL_DISK_R; dz++)
-        rt[dz + DUAL_DISK_R] = (int) sqrt((double) DUAL_DISK_R * DUAL_DISK_R - (double) dz * dz);
+    for (int dz = -R; dz <= R; dz++)
+        rt[dz + R] = (int) sqrt((double) R * R - (double) dz * dz);
 }
 
 // Add one source span [lo,hi] on box row `rowz` into the candidate field: for every candidate
@@ -583,29 +598,30 @@ static void dual_field_add_span(
     int lo,
     int hi,
     int rowz,
-    const int *rt)
+    const int *rt,
+    int R)
 {
     const int L = hi - lo + 1;
-    int pzLo = rowz - DUAL_DISK_R > z0 ? rowz - DUAL_DISK_R : z0;
-    int pzHi = rowz + DUAL_DISK_R < z0 + h - 1 ? rowz + DUAL_DISK_R : z0 + h - 1;
+    int pzLo = rowz - R > z0 ? rowz - R : z0;
+    int pzHi = rowz + R < z0 + h - 1 ? rowz + R : z0 + h - 1;
 
     for (int pz = pzLo; pz <= pzHi; pz++) {
-        const int R = rt[pz - rowz + DUAL_DISK_R];
+        const int Rrow = rt[pz - rowz + R];
         int xlo = lo - R > x0 ? lo - R : x0;
         int xhi = hi + R < x0 + w - 1 ? hi + R : x0 + w - 1;
         if (xlo > xhi)
             continue;
 
         int *crow = field + (size_t) (pz - z0) * w;
-        const int p1 = lo + R;
-        const int p2 = hi - R;
+        const int p1 = lo + Rrow;
+        const int p2 = hi - Rrow;
         const int upEnd = p1 - 1 < p2 ? p1 - 1 : p2;
         const int downBeg = p1 > p2 + 1 ? p1 : p2 + 1;
-        const int plateau = p1 <= p2 ? 2 * R + 1 : L;
+        const int plateau = p1 <= p2 ? 2 * Rrow + 1 : L;
 
-        int xs = lo - R > xlo ? lo - R : xlo;
+        int xs = lo - Rrow > xlo ? lo - Rrow : xlo;
         int xe = upEnd < xhi ? upEnd : xhi;
-        int c = xs - (lo - R) + 1;
+        int c = xs - (lo - Rrow) + 1;
         for (int x = xs; x <= xe; x++, c++)
             crow[x - x0] += c;
 
@@ -615,8 +631,8 @@ static void dual_field_add_span(
             crow[x - x0] += plateau;
 
         xs = downBeg > xlo ? downBeg : xlo;
-        xe = hi + R < xhi ? hi + R : xhi;
-        c = hi + R - xs + 1;
+        xe = hi + Rrow < xhi ? hi + Rrow : xhi;
+        c = hi + Rrow - xs + 1;
         for (int x = xs; x <= xe; x++, c--)
             crow[x - x0] += c;
     }
@@ -637,7 +653,8 @@ static void dual_field_build(
     int exclZ,
     int hasExcl,
     int *field,
-    const int *rt)
+    const int *rt,
+    int R)
 {
     memset(field, 0, sizeof(int) * (size_t) w * (size_t) h);
 
@@ -651,15 +668,14 @@ static void dual_field_build(
             int hi = bx1;
             if (hasExcl) {
                 int dze = rowz - exclZ;
-                if (dze >= -DUAL_DISK_R && dze <= DUAL_DISK_R) {
-                    const int R = rt[dze + DUAL_DISK_R];
+                if (dze >= -R && dze <= R) {
                     const int elo = exclX - R;
                     const int ehi = exclX + R;
                     if (ehi >= lo) {
                         // right remainder [max(ehi+1,lo), hi]
                         const int s2 = ehi + 1 > lo ? ehi + 1 : lo;
                         if (s2 <= hi)
-                            dual_field_add_span(field, x0, z0, w, h, s2, hi, rowz, rt);
+                            dual_field_add_span(field, x0, z0, w, h, s2, hi, rowz, rt, R);
                         // left remainder [lo, min(hi, elo-1)]; empty when the exclusion covers
                         // the row start. NB: when the exclusion row lies entirely LEFT of the
                         // box row (ehi < lo) the whole row must be kept - clamping hi here
@@ -673,7 +689,7 @@ static void dual_field_build(
                     }
                 }
             }
-            dual_field_add_span(field, x0, z0, w, h, lo, hi, rowz, rt);
+            dual_field_add_span(field, x0, z0, w, h, lo, hi, rowz, rt, R);
         }
     }
 }
@@ -751,8 +767,12 @@ static void dual_cover_union_info(
             for (int pz = 0; pz < az; pz++) {
                 double ddz1 = (double) bz + pz - z1;
                 double ddz2 = (double) bz + pz - z2;
-                if ((ddx1 * ddx1 + ddz1 * ddz1 <= AFK_RSQ) ||
-                    (ddx2 * ddx2 + ddz2 * ddz2 <= AFK_RSQ)) {
+                double d1 = ddx1 * ddx1 + ddz1 * ddz1;
+                double d2 = ddx2 * ddx2 + ddz2 * ddz2;
+                // in the 128 keep-alive disk of EITHER dummy AND at least 24 blocks from
+                // BOTH dummies (the spawn-ring inner edge)
+                if ((d1 <= AFK_RSQ || d2 <= AFK_RSQ) &&
+                    (d1 >= AFK_INNER_RSQ && d2 >= AFK_INNER_RSQ)) {
                     cnt++;
                     int cx = bx + px;
                     int cz = bz + pz;
@@ -881,6 +901,8 @@ typedef struct {
     int x0, z0, w, h;
     int *field;
     const int *rt;
+    int *fieldIn;   // 24-radius field: objective = field - fieldIn (the 24..128 ring count)
+    const int *rtIn;
     int cap;    // n * ax * az: full multiset coverage, upper bound for early exit
     int stopAt; // >0: stop as soon as the best found pair reaches this area (0 = exact optimum)
 } DualSolve;
@@ -906,29 +928,49 @@ static int dual_pick_partner(
     int *outX,
     int *outZ)
 {
+    // ring-aware increment: f128(q) - f24(q), both with the anchor's disk subtracted.
+    // Per-block state enumeration (using d24 subset d128) proves the difference equals the
+    // exact 24..128-ring increment of the union, so argmax stays globally exact.
     dual_field_build(s->p, s->n, s->x0, s->z0, s->w, s->h, s->ax, s->az,
-                     ax_, az_, 1, s->field, s->rt);
+                     ax_, az_, 1, s->field, s->rt, DUAL_DISK_R);
+    dual_field_build(s->p, s->n, s->x0, s->z0, s->w, s->h, s->ax, s->az,
+                     ax_, az_, 1, s->fieldIn, s->rtIn, DUAL_INNER_R);
     int rx0, rz0, rx1, rz1;
     dual_safe_rect(ca, s->x0, s->z0, s->w, s->h, &rx0, &rz0, &rx1, &rz1);
 
     int gx = ax_, gz = az_, gval = -1;
-    if (rx0 <= rx1 && rz0 <= rz1)
-        gval = dual_field_best(s->field, s->x0, s->z0, s->w, s->h,
-                               rx0, rz0, rx1, rz1, &gx, &gz);
+    if (rx0 <= rx1 && rz0 <= rz1) {
+        for (int pz = rz0; pz <= rz1; pz++) {
+            const int *r1 = s->field + (size_t) (pz - s->z0) * s->w;
+            const int *r2 = s->fieldIn + (size_t) (pz - s->z0) * s->w;
+            for (int px = rx0; px <= rx1; px++) {
+                int v = r1[px - s->x0] - r2[px - s->x0];
+                if (v > gval) {
+                    gval = v;
+                    gx = px;
+                    gz = pz;
+                }
+            }
+        }
+    }
 
     for (int pz = s->z0; pz < s->z0 + s->h; pz++) {
-        const int *row = s->field + (size_t) (pz - s->z0) * s->w;
+        const int *r1 = s->field + (size_t) (pz - s->z0) * s->w;
+        const int *r2 = s->fieldIn + (size_t) (pz - s->z0) * s->w;
         for (int px = s->x0; px < s->x0 + s->w; px++) {
-            int v = row[px - s->x0];
+            int v = r1[px - s->x0] - r2[px - s->x0];
             if (v <= gval)
                 continue;
             if (px >= rx0 && px <= rx1 && pz >= rz0 && pz <= rz1)
                 continue; // safe-rectangle cells are already covered by the argmax above
-            if (dual_valid_at(s->p, s->n, s->ax, s->az, ca, px, pz)) {
-                gval = v;
-                gx = px;
-                gz = pz;
-            }
+            // honest validation outside the safe rectangle: ring-aware union + span
+            DualCoverInfo tmp;
+            dual_cover_union_info(s->p, s->n, s->ax, s->az, ax_, az_, px, pz, &tmp);
+            if (!dual_cover_valid(&tmp))
+                continue;
+            gval = v;
+            gx = px;
+            gz = pz;
         }
     }
 
@@ -1072,10 +1114,15 @@ static int dual_solve(
     // Clamping any outside candidate towards the window never decreases its coverage, so both
     // points of an optimal pair lie inside this window.
     int rt[2 * DUAL_DISK_R + 1];
-    dual_rt_build(rt);
+    int rtIn[2 * DUAL_INNER_R + 1];
+    dual_rt_build(rt, DUAL_DISK_R);
+    dual_rt_build(rtIn, DUAL_INNER_R);
 
     int *field = (int *) malloc(sizeof(int) * (size_t) w * (size_t) h);
-    if (!field) {
+    int *fieldIn = (int *) malloc(sizeof(int) * (size_t) w * (size_t) h);
+    if (!field || !fieldIn) {
+        free(field);
+        free(fieldIn);
         if (outX1) *outX1 = cx;
         if (outZ1) *outZ1 = cz;
         if (outX2) *outX2 = cx;
@@ -1097,16 +1144,34 @@ static int dual_solve(
     s.h = h;
     s.field = field;
     s.rt = rt;
+    s.fieldIn = fieldIn;
+    s.rtIn = rtIn;
     s.cap = n * ax * az;
     s.stopAt = stopAt;
 
     // single-point optimum (also the reported single reference area); a single 128-disk is
     // always span-valid, so no rectangle restriction applies here. The returned cell attains
     // the returned value exactly.
-    dual_field_build(p, n, minX, minZ, w, h, ax, az, 0, 0, 0, field, rt);
-    int sx, sz;
-    int singleArea = dual_field_best(field, minX, minZ, w, h,
-                                     minX, minZ, minX + w - 1, minZ + h - 1, &sx, &sz);
+    // ring-aware single optimum: argmax of (cov128 - cov24) over the full window - the
+    // per-block decomposition proves the difference equals the 24..128 ring count exactly
+    dual_field_build(p, n, minX, minZ, w, h, ax, az, 0, 0, 0, field, rt, DUAL_DISK_R);
+    dual_field_build(p, n, minX, minZ, w, h, ax, az, 0, 0, 0, fieldIn, rtIn, DUAL_INNER_R);
+    int sx = minX, sz = minZ;
+    int bestDiff = -1;
+    int singleArea = 0;
+    for (int pz = minZ; pz < minZ + h; pz++) {
+        const int *r1 = field + (size_t) (pz - minZ) * w;
+        const int *r2 = fieldIn + (size_t) (pz - minZ) * w;
+        for (int px = minX; px < minX + w; px++) {
+            int d = r1[px - minX] - r2[px - minX];
+            if (d > bestDiff) {
+                bestDiff = d;
+                sx = px;
+                sz = pz;
+                singleArea = d;
+            }
+        }
+    }
     if (outSingleArea) *outSingleArea = singleArea;
     if (outSingleX) *outSingleX = sx;
     if (outSingleZ) *outSingleZ = sz;
@@ -1115,6 +1180,7 @@ static int dual_solve(
     // single optimum, so there is nothing left to search.
     if (stopAt > 0 && singleArea >= stopAt) {
         free(field);
+        free(fieldIn);
         if (outX1) *outX1 = sx;
         if (outZ1) *outZ1 = sz;
         if (outX2) *outX2 = sx;
@@ -1157,13 +1223,29 @@ static int dual_solve(
                 pb[nb++] = p[i];
         }
 
-        int xa, za, xb, zb;
-        dual_field_build(pa, na, minX, minZ, w, h, ax, az, 0, 0, 0, field, rt);
-        dual_field_best(field, minX, minZ, w, h,
-                        minX, minZ, minX + w - 1, minZ + h - 1, &xa, &za);
-        dual_field_build(pb, nb, minX, minZ, w, h, ax, az, 0, 0, 0, field, rt);
-        dual_field_best(field, minX, minZ, w, h,
-                        minX, minZ, minX + w - 1, minZ + h - 1, &xb, &zb);
+        int xa = minX, za = minZ, xb = maxX, zb = maxZ;
+        dual_field_build(pa, na, minX, minZ, w, h, ax, az, 0, 0, 0, field, rt, DUAL_DISK_R);
+        dual_field_build(pa, na, minX, minZ, w, h, ax, az, 0, 0, 0, fieldIn, rtIn, DUAL_INNER_R);
+        int bestA = -1;
+        for (int pz = minZ; pz < minZ + h; pz++) {
+            const int *r1 = field + (size_t) (pz - minZ) * w;
+            const int *r2 = fieldIn + (size_t) (pz - minZ) * w;
+            for (int px = minX; px < minX + w; px++) {
+                int d = r1[px - minX] - r2[px - minX];
+                if (d > bestA) { bestA = d; xa = px; za = pz; }
+            }
+        }
+        dual_field_build(pb, nb, minX, minZ, w, h, ax, az, 0, 0, 0, field, rt, DUAL_DISK_R);
+        dual_field_build(pb, nb, minX, minZ, w, h, ax, az, 0, 0, 0, fieldIn, rtIn, DUAL_INNER_R);
+        int bestB = -1;
+        for (int pz = minZ; pz < minZ + h; pz++) {
+            const int *r1 = field + (size_t) (pz - minZ) * w;
+            const int *r2 = fieldIn + (size_t) (pz - minZ) * w;
+            for (int px = minX; px < minX + w; px++) {
+                int d = r1[px - minX] - r2[px - minX];
+                if (d > bestB) { bestB = d; xb = px; zb = pz; }
+            }
+        }
 
         if (dual_start_seen(tried, &nTried, xa, za, xb, zb))
             continue; // identical start already refined to its fixed point
@@ -1179,6 +1261,7 @@ static int dual_solve(
     }
 
     free(field);
+    free(fieldIn);
 
     // report the honest union of the returned points; degrade to the single optimum if the pair
     // somehow violates the span limit or fails to beat it (defensive - partners are only ever

@@ -92,6 +92,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
     private JPanel batchAreaPanel;
     private JPanel batchModePanel;
     private JCheckBox searchMinAreaCheckBox;
+    private boolean updatingAreaTypeCombo = false;
     private JComboBox<String> searchAreaTypeComboBox;
     private JCheckBox searchSingleModeCheckBox;
     private JCheckBox searchDualModeCheckBox;
@@ -274,23 +275,36 @@ public class DoubleMonumentForFixedSeed extends JFrame {
      * that mode. With several modes enabled the dropdown is greyed out (the shared threshold is
      * compared against each enabled mode's own area).
      */
+    /** Rebuilds the area-type combo to only show options for the checked search modes. */
+    private void updateAreaTypeComboItems(boolean batch, int modes) {
+        updatingAreaTypeCombo = true;
+        JComboBox<String> combo = batch ? batchAreaTypeComboBox : searchAreaTypeComboBox;
+        if (combo == null) return;
+        String cur = combo.getSelectedItem() != null ? combo.getSelectedItem().toString() : null;
+        combo.removeAllItems();
+        if ((modes & 1) != 0) combo.addItem(getString("area.single"));
+        if ((modes & 2) != 0) combo.addItem(getString("area.dual"));
+        if ((modes & 4) != 0) combo.addItem(getString("area.gate"));
+        if (combo.getItemCount() == 1) {
+            combo.setSelectedIndex(0);
+        } else if (cur != null) {
+            for (int i = 0; i < combo.getItemCount(); i++) {
+                if (combo.getItemAt(i).equals(cur)) { combo.setSelectedIndex(i); break; }
+            }
+        }
+        updatingAreaTypeCombo = false;
+    }
+
     private void syncAreaTypeWithMode(boolean batch, int modes) {
+        updateAreaTypeComboItems(batch, modes);
         JComboBox<String> combo = batch ? batchAreaTypeComboBox : searchAreaTypeComboBox;
         if (combo == null) {
             return;
         }
-        boolean oneMode = Integer.bitCount(modes) == 1;
-        if (oneMode) {
-            int idx = modes == MonumentFinderBridge.SEARCH_SINGLE ? 0
-                    : modes == MonumentFinderBridge.SEARCH_DUAL ? 1 : 2;
-            if (combo.getSelectedIndex() != idx) {
-                combo.setSelectedIndex(idx);
-            }
-        }
         boolean areaOn = batch
                 ? batchMinAreaCheckBox != null && batchMinAreaCheckBox.isSelected()
                 : searchMinAreaCheckBox != null && searchMinAreaCheckBox.isSelected();
-        combo.setEnabled(oneMode && areaOn);
+        combo.setEnabled(areaOn);
     }
 
     /** Field + dropdown follow the area-filter checkbox; a running search disables everything. */
@@ -572,7 +586,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         
         JPanel inputPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(2, 5, 2, 5);
         gbc.anchor = GridBagConstraints.WEST;
 
         gbc.gridx = 0;
@@ -657,7 +671,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         searchAreaTypeComboBox = new JComboBox<>(new String[]{
                 getString("area.single"), getString("area.dual"), getString("area.gate")});
         searchAreaTypeComboBox.addActionListener(e -> {
-            if (searchSingleModeCheckBox == null) {
+            if (updatingAreaTypeCombo || searchSingleModeCheckBox == null) {
                 return;
             }
             // picking an area type also enables that mode (the others stay as they are)
@@ -683,20 +697,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         searchMinXLabel.setFont(getLoadedFont());
         inputPanel.add(searchMinXLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        minXField = new JTextField(String.valueOf(DEFAULT_MIN_X), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        minXField = new JTextField(String.valueOf(DEFAULT_MIN_X), 12);
         minXField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(minXField, getString("label.minX").replace(":", ""));
             }
         });
-        inputPanel.add(minXField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel minXWrap = new JPanel(new BorderLayout(4, 0));
+        minXWrap.add(minXField, BorderLayout.CENTER);
         minXBlocksHintLabel = createBlocksHintLabel(minXField);
-        inputPanel.add(minXBlocksHintLabel, gbc);
+        minXWrap.add(minXBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(minXWrap, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 6;
@@ -706,20 +718,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         searchMaxXLabel.setFont(getLoadedFont());
         inputPanel.add(searchMaxXLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        maxXField = new JTextField(String.valueOf(DEFAULT_MAX_X), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        maxXField = new JTextField(String.valueOf(DEFAULT_MAX_X), 12);
         maxXField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(maxXField, getString("label.maxX").replace(":", ""));
             }
         });
-        inputPanel.add(maxXField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel maxXWrap = new JPanel(new BorderLayout(4, 0));
+        maxXWrap.add(maxXField, BorderLayout.CENTER);
         maxXBlocksHintLabel = createBlocksHintLabel(maxXField);
-        inputPanel.add(maxXBlocksHintLabel, gbc);
+        maxXWrap.add(maxXBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(maxXWrap, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 7;
@@ -729,20 +739,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         searchMinZLabel.setFont(getLoadedFont());
         inputPanel.add(searchMinZLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        minZField = new JTextField(String.valueOf(DEFAULT_MIN_Z), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        minZField = new JTextField(String.valueOf(DEFAULT_MIN_Z), 12);
         minZField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(minZField, getString("label.minZ").replace(":", ""));
             }
         });
-        inputPanel.add(minZField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel minZWrap = new JPanel(new BorderLayout(4, 0));
+        minZWrap.add(minZField, BorderLayout.CENTER);
         minZBlocksHintLabel = createBlocksHintLabel(minZField);
-        inputPanel.add(minZBlocksHintLabel, gbc);
+        minZWrap.add(minZBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(minZWrap, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 8;
@@ -752,20 +760,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         searchMaxZLabel.setFont(getLoadedFont());
         inputPanel.add(searchMaxZLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        maxZField = new JTextField(String.valueOf(DEFAULT_MAX_Z), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        maxZField = new JTextField(String.valueOf(DEFAULT_MAX_Z), 12);
         maxZField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(maxZField, getString("label.maxZ").replace(":", ""));
             }
         });
-        inputPanel.add(maxZField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel maxZWrap = new JPanel(new BorderLayout(4, 0));
+        maxZWrap.add(maxZField, BorderLayout.CENTER);
         maxZBlocksHintLabel = createBlocksHintLabel(maxZField);
-        inputPanel.add(maxZBlocksHintLabel, gbc);
+        maxZWrap.add(maxZBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(maxZWrap, gbc);
 
         // 正方形区域边长（勾选后按中心 0,0 填入 min/max）
         gbc.gridx = 0;
@@ -779,9 +785,8 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         squareSideCheckBox.addActionListener(e -> onSquareSideModeToggled());
         inputPanel.add(squareSideCheckBox, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        squareSideField = new JTextField(String.valueOf(DEFAULT_SQUARE_SIDE), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        squareSideField = new JTextField(String.valueOf(DEFAULT_SQUARE_SIDE), 12);
         squareSideField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void changedUpdate(javax.swing.event.DocumentEvent e) {
                 applySquareSideToBounds();
@@ -800,12 +805,11 @@ public class DoubleMonumentForFixedSeed extends JFrame {
                 validateIntegerInput(squareSideField, getString("label.squareSide"));
             }
         });
-        inputPanel.add(squareSideField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel squareSideWrap = new JPanel(new BorderLayout(4, 0));
+        squareSideWrap.add(squareSideField, BorderLayout.CENTER);
         squareSideBlocksHintLabel = createBlocksHintLabel(squareSideField);
-        inputPanel.add(squareSideBlocksHintLabel, gbc);
+        squareSideWrap.add(squareSideBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(squareSideWrap, gbc);
         applyBoundFieldEnableState(true);
         applySquareSideToBounds();
 
@@ -1086,7 +1090,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
     private String formatBlocksHint(String regionText) {
         try {
             long region = Long.parseLong(regionText.trim());
-            long blocks = region * REGION_TO_BLOCKS;
+            long blocks = Math.abs(region * REGION_TO_BLOCKS);
             return getString("hint.blocks", String.format(java.util.Locale.US, "%,d", blocks));
         } catch (NumberFormatException e) {
             return "";
@@ -1104,6 +1108,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
     private JLabel createBlocksHintLabel(JTextField field) {
         JLabel hintLabel = new JLabel();
         hintLabel.setFont(getLoadedFont());
+        hintLabel.setHorizontalAlignment(javax.swing.SwingConstants.RIGHT);
         updateBlocksHint(field, hintLabel);
         field.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void changedUpdate(javax.swing.event.DocumentEvent e) {
@@ -1957,7 +1962,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         
         JPanel inputPanel = new JPanel(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.insets = new Insets(2, 5, 2, 5);
         gbc.anchor = GridBagConstraints.WEST;
 
         gbc.gridx = 0;
@@ -2050,7 +2055,7 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         batchAreaTypeComboBox = new JComboBox<>(new String[]{
                 getString("area.single"), getString("area.dual"), getString("area.gate")});
         batchAreaTypeComboBox.addActionListener(e -> {
-            if (batchSingleModeCheckBox == null) {
+            if (updatingAreaTypeCombo || batchSingleModeCheckBox == null) {
                 return;
             }
             // picking an area type also enables that mode (the others stay as they are)
@@ -2107,20 +2112,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         batchMinXLabel.setFont(getLoadedFont());
         inputPanel.add(batchMinXLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        batchMinXField = new JTextField(String.valueOf(BATCH_DEFAULT_MIN_X), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        batchMinXField = new JTextField(String.valueOf(BATCH_DEFAULT_MIN_X), 12);
         batchMinXField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(batchMinXField, getString("label.minX").replace(":", ""));
             }
         });
-        inputPanel.add(batchMinXField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel batchMinXWrap = new JPanel(new BorderLayout(4, 0));
+        batchMinXWrap.add(batchMinXField, BorderLayout.CENTER);
         batchMinXBlocksHintLabel = createBlocksHintLabel(batchMinXField);
-        inputPanel.add(batchMinXBlocksHintLabel, gbc);
+        batchMinXWrap.add(batchMinXBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(batchMinXWrap, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 7;
@@ -2130,20 +2133,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         batchMaxXLabel.setFont(getLoadedFont());
         inputPanel.add(batchMaxXLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        batchMaxXField = new JTextField(String.valueOf(BATCH_DEFAULT_MAX_X), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        batchMaxXField = new JTextField(String.valueOf(BATCH_DEFAULT_MAX_X), 12);
         batchMaxXField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(batchMaxXField, getString("label.maxX").replace(":", ""));
             }
         });
-        inputPanel.add(batchMaxXField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel batchMaxXWrap = new JPanel(new BorderLayout(4, 0));
+        batchMaxXWrap.add(batchMaxXField, BorderLayout.CENTER);
         batchMaxXBlocksHintLabel = createBlocksHintLabel(batchMaxXField);
-        inputPanel.add(batchMaxXBlocksHintLabel, gbc);
+        batchMaxXWrap.add(batchMaxXBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(batchMaxXWrap, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 8;
@@ -2153,20 +2154,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         batchMinZLabel.setFont(getLoadedFont());
         inputPanel.add(batchMinZLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        batchMinZField = new JTextField(String.valueOf(BATCH_DEFAULT_MIN_Z), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        batchMinZField = new JTextField(String.valueOf(BATCH_DEFAULT_MIN_Z), 12);
         batchMinZField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(batchMinZField, getString("label.minZ").replace(":", ""));
             }
         });
-        inputPanel.add(batchMinZField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel batchMinZWrap = new JPanel(new BorderLayout(4, 0));
+        batchMinZWrap.add(batchMinZField, BorderLayout.CENTER);
         batchMinZBlocksHintLabel = createBlocksHintLabel(batchMinZField);
-        inputPanel.add(batchMinZBlocksHintLabel, gbc);
+        batchMinZWrap.add(batchMinZBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(batchMinZWrap, gbc);
 
         gbc.gridx = 0;
         gbc.gridy = 9;
@@ -2176,20 +2175,18 @@ public class DoubleMonumentForFixedSeed extends JFrame {
         batchMaxZLabel.setFont(getLoadedFont());
         inputPanel.add(batchMaxZLabel, gbc);
         gbc.gridx = 1;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.weightx = 1.0;
-        batchMaxZField = new JTextField(String.valueOf(BATCH_DEFAULT_MAX_Z), 20);
+        gbc.fill = GridBagConstraints.NONE;
+        batchMaxZField = new JTextField(String.valueOf(BATCH_DEFAULT_MAX_Z), 12);
         batchMaxZField.addFocusListener(new java.awt.event.FocusAdapter() {
             public void focusLost(java.awt.event.FocusEvent e) {
                 validateIntegerInput(batchMaxZField, getString("label.maxZ").replace(":", ""));
             }
         });
-        inputPanel.add(batchMaxZField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel batchMaxZWrap = new JPanel(new BorderLayout(4, 0));
+        batchMaxZWrap.add(batchMaxZField, BorderLayout.CENTER);
         batchMaxZBlocksHintLabel = createBlocksHintLabel(batchMaxZField);
-        inputPanel.add(batchMaxZBlocksHintLabel, gbc);
+        batchMaxZWrap.add(batchMaxZBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(batchMaxZWrap, gbc);
 
         // 正方形区域边长（勾选后按中心 0,0 填入 min/max）
         gbc.gridx = 0;
@@ -2224,12 +2221,11 @@ public class DoubleMonumentForFixedSeed extends JFrame {
                 validateIntegerInput(batchSquareSideField, getString("label.squareSide"));
             }
         });
-        inputPanel.add(batchSquareSideField, gbc);
-        gbc.gridx = 2;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.weightx = 0;
+        JPanel batchSquareSideWrap = new JPanel(new BorderLayout(4, 0));
+        batchSquareSideWrap.add(batchSquareSideField, BorderLayout.CENTER);
         batchSquareSideBlocksHintLabel = createBlocksHintLabel(batchSquareSideField);
-        inputPanel.add(batchSquareSideBlocksHintLabel, gbc);
+        batchSquareSideWrap.add(batchSquareSideBlocksHintLabel, BorderLayout.EAST);
+        inputPanel.add(batchSquareSideWrap, gbc);
         applyBatchBoundFieldEnableState(true);
         applyBatchSquareSideToBounds();
 

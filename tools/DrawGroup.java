@@ -140,6 +140,14 @@ public class DrawGroup {
         for (int[] p : pts)
             g.drawOval((p[0] - R - mnx) * scale, (p[1] - R - mnz) * scale, 2 * R * scale, 2 * R * scale);
 
+        // 24-disk outlines (spawn-ring inner edge, red dashed)
+        g.setColor(new Color(0xE0, 0x30, 0x30));
+        g.setStroke(new BasicStroke(1.5f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL,
+                0, new float[]{6f, 4f}, 0));
+        for (int[] p : pts)
+            g.drawOval((p[0] - 24 - mnx) * scale, (p[1] - 24 - mnz) * scale, 48 * scale, 48 * scale);
+        g.setStroke(new BasicStroke(1f));
+
         // single-gate 257x257 window
         g.setColor(new Color(0xFF, 0x8C, 0x00));
         g.setStroke(new BasicStroke(2f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_BEVEL,

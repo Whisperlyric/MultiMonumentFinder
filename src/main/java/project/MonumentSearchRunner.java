@@ -21,7 +21,7 @@ public class MonumentSearchRunner {
      * Maximum allowed region area, i.e. (maxX - minX) * (maxZ - minZ).
      * Searches above this limit are rejected by the UI.
      */
-    public static final long MAX_SEARCH_REGION_AREA = 1024L * 1024L;
+    public static final long MAX_SEARCH_REGION_AREA = 58594L * 58594L;
 
     public record SearchParams(
             long seed,

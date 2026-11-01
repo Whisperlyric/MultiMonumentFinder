@@ -174,6 +174,61 @@ bool emitGroup(SearchContext &ctx, const MonumentBlockPos *pts, int nn)
     int afkX = 0, afkZ = 0;
     int singleArea = monument_afk_coverage(pts, nn, MONUMENT_BOX, MONUMENT_BOX, &afkX, &afkZ);
 
+    // Single-mode pseudo filter (cheap subset solves) runs before the expensive dual/gate
+    // computations so that groups failing the single threshold are rejected immediately.
+    bool singleKeep = true;
+    if (filterMode == 0 && nn >= 3) {
+        for (int skip = 0; skip < nn && singleKeep; skip++) {
+            MonumentBlockPos sub[3];
+            int m = 0;
+            long long subBound = 0;
+            for (int i = 0; i < nn; i++) {
+                if (i == skip)
+                    continue;
+                sub[m++] = pts[i];
+            }
+            for (int i = 0; i < m; i++) {
+                int bm = INT_MAX;
+                for (int j = 0; j < m; j++) {
+                    if (j == i)
+                        continue;
+                    int dx = std::abs(sub[i].x - sub[j].x);
+                    int dz = std::abs(sub[i].z - sub[j].z);
+                    int ub = monument_pair_upper_bound(dx, dz);
+                    if (ub < bm)
+                        bm = ub;
+                }
+                subBound += bm;
+            }
+            if (subBound < singleArea)
+                continue;
+            if (monument_afk_coverage(sub, m, MONUMENT_BOX, MONUMENT_BOX, nullptr, nullptr) >= singleArea)
+                singleKeep = false;
+        }
+    }
+
+    // Early threshold rejection on single area (filterMode 0 only): groups failing the
+    // single-area threshold are rejected before the expensive dual/gate computations.
+    if (areaMin > 0 && filterMode == 0 && singleArea <= areaMin)
+        return false;
+
+    // Gate ceiling upper bound prefilter for filterMode 1: dualArea <= ceiling, so groups
+    // where even the unconstrained ceiling can't reach the threshold skip the dual solve.
+    if (areaMin > 0 && filterMode == 1 &&
+        monument_group_upper_bound(pts, nn, MONUMENT_BOX, MONUMENT_BOX) <= areaMin)
+        return false;
+
+    // Gate ceiling: needed BEFORE the threshold for filterMode 2 (gate is the basis), or
+    // AFTER acceptance for filterMode 0/1 (only for row columns). Compute now if needed
+    // for threshold; defer to post-acceptance otherwise.
+    int areaMax = 0, areaMaxX = 0, areaMaxZ = 0;
+    if (filterMode == 2) {
+        areaMax = monument_group_max_area(pts, nn, MONUMENT_BOX, MONUMENT_BOX,
+                                          &areaMaxX, &areaMaxZ);
+        if (areaMin > 0 && areaMax <= areaMin)
+            return false;
+    }
+
     // Dual-dummy area (expensive) when requested; a pseudo-group falls back to the single row.
     bool dualBetter = false;
     int dualArea = 0;
@@ -215,44 +270,10 @@ bool emitGroup(SearchContext &ctx, const MonumentBlockPos *pts, int nn)
         }
     }
 
-    // Single-dummy pseudo-group filter (basis = single): removing any member must strictly
-    // shrink the single-point area, otherwise the group is effectively a smaller one that is
-    // reported again with a larger count. Same rule the dual path applies to its union.
-    bool singleKeep = true;
-    if (filterMode == 0 && nn >= 3) {
-        for (int skip = 0; skip < nn && singleKeep; skip++) {
-            MonumentBlockPos sub[3];
-            int m = 0;
-            long long subBound = 0;
-            for (int i = 0; i < nn; i++) {
-                if (i == skip)
-                    continue;
-                sub[m++] = pts[i];
-            }
-            for (int i = 0; i < m; i++) {
-                int bm = INT_MAX;
-                for (int j = 0; j < m; j++) {
-                    if (j == i)
-                        continue;
-                    int dx = std::abs(sub[i].x - sub[j].x);
-                    int dz = std::abs(sub[i].z - sub[j].z);
-                    int ub = monument_pair_upper_bound(dx, dz);
-                    if (ub < bm)
-                        bm = ub;
-                }
-                subBound += bm;
-            }
-            if (subBound < singleArea)
-                continue; // the subset cannot reach the group area: the member surely contributes
-            if (monument_afk_coverage(sub, m, MONUMENT_BOX, MONUMENT_BOX, nullptr, nullptr) >= singleArea)
-                singleKeep = false; // removed member adds nothing: pseudo-group
-        }
-    }
-
-    // Single-gate ceiling when requested.
-    int areaMax = 0, areaMaxX = 0, areaMaxZ = 0;
-    if (wantGate) {
-        areaMax = monument_group_max_area(pts, nn, MONUMENT_BOX, MONUMENT_BOX, &areaMaxX, &areaMaxZ);
+    // Gate ceiling for surviving groups (deferred from above for filterMode 0/1)
+    if (!wantGate && areaMax == 0) {
+        areaMax = monument_group_max_area(pts, nn, MONUMENT_BOX, MONUMENT_BOX,
+                                          &areaMaxX, &areaMaxZ);
     }
 
     // Acceptance: only the selected area type is compared against the threshold.
@@ -260,7 +281,7 @@ bool emitGroup(SearchContext &ctx, const MonumentBlockPos *pts, int nn)
     if (areaMin <= 0)
         pass = filterMode != 0 || singleKeep; // filter off still drops single-mode pseudo-groups
     else if (filterMode == 0)
-        pass = singleKeep && singleArea > areaMin;
+        pass = singleKeep; // threshold already checked above
     else if (filterMode == 1)
         pass = dualBetter && dualArea > areaMin;
     else
