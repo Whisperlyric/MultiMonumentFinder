@@ -51,7 +51,9 @@ static int brute_cover(const MonumentBlockPos *p, int n, const int *px, const in
                 for (int k = 0; k < npts && !covered; k++) {
                     const long dx = (long) x - px[k];
                     const long dz = (long) z - pz[k];
-                    if (dx * dx + dz * dz <= (long) DISK_R * DISK_R)
+                    const long d2 = dx * dx + dz * dz;
+                    // 24..128 spawn ring: within 128 of a point AND at least 24 from it
+                    if (d2 <= (long) DISK_R * DISK_R && d2 > (long) 24 * 24)
                         covered = 1;
                 }
                 if (!covered)

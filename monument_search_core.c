@@ -234,9 +234,13 @@ int monument_classify_ocean_type(
 
 // AFK position attracts (keeps alive) every spawning block within euclidean distance 128 on the horizontal plane.
 static const double AFK_RSQ = 128.0 * 128.0;
-// spawn-ring inner edge: blocks within 24 blocks of the AFK point do not spawn and are
-// NOT counted - every area figure in this file is the 24..128 ring count
+// spawn-ring inner edge (AIO convention): blocks within 24 blocks of the AFK point do
+// not spawn and are NOT counted - every area figure is the 24 < d <= 128 ring count
 static const double AFK_INNER_RSQ = 24.0 * 24.0;
+#define DUAL_INNER_R 24
+// candidate-window pad: the ring optimum may sit just outside the group's box extents
+// (a dummy 25+ blocks out has a fully clear 24-inner disk), so windows are padded by this
+#define DUAL_WIN_PAD (DUAL_INNER_R + 1)
 
 // getStructurePos returns the region chunk corner; the 58x58 box spans [pos-29, pos+28] (centre = pos, in-game verified 2026-08-28). Area is anchor-invariant but the reported AFK point is only correct with this anchor.
 #define AFK_BOX_LO(ax) (-(((ax) + 1) / 2))         // -29 for 58
@@ -271,7 +275,7 @@ static int afk_blocks_in_range(
                 double ddx = px + dx;
                 double ddz = pz + dz;
                 cnt += (ddx * ddx + ddz * ddz <= AFK_RSQ) &&
-                        (ddx * ddx + ddz * ddz >= AFK_INNER_RSQ);
+                        (ddx * ddx + ddz * ddz > AFK_INNER_RSQ);
             }
         }
     }
@@ -374,11 +378,15 @@ static void afk_coverage_exact(
                     int hi = px + R < bx1 ? px + R : bx1;
                     crow[px - x0] += hi - lo + 1;
                     // spawn-ring inner edge: the 24-disk around the point does not spawn
-                    int rIn = rtIn[(pz - rowz) + RIN];
-                    int slo = px - rIn > bx ? px - rIn : bx;
-                    int shi = px + rIn < bx1 ? px + rIn : bx1;
-                    if (slo <= shi)
-                        crow[px - x0] -= shi - slo + 1;
+                    // (only rows within 24 of the point cross the inner disk)
+                    const int dIn = pz - rowz;
+                    if (dIn >= -RIN && dIn <= RIN) {
+                        int rIn = rtIn[dIn + RIN];
+                        int slo = px - rIn > bx ? px - rIn : bx;
+                        int shi = px + rIn < bx1 ? px + rIn : bx1;
+                        if (slo <= shi)
+                            crow[px - x0] -= shi - slo + 1;
+                    }
                 }
             }
         }
@@ -467,10 +475,10 @@ int monument_afk_coverage(
         if (p[i].x > maxX) maxX = p[i].x;
         if (p[i].z > maxZ) maxZ = p[i].z;
     }
-    minX += AFK_BOX_LO(ax);
-    minZ += AFK_BOX_LO(az);
-    maxX += AFK_BOX_HI(ax);
-    maxZ += AFK_BOX_HI(az);
+    minX += AFK_BOX_LO(ax) - DUAL_WIN_PAD;
+    minZ += AFK_BOX_LO(az) - DUAL_WIN_PAD;
+    maxX += AFK_BOX_HI(ax) + DUAL_WIN_PAD;
+    maxZ += AFK_BOX_HI(az) + DUAL_WIN_PAD;
     int w = maxX - minX + 1;
     int h = maxZ - minZ + 1;
 
@@ -485,7 +493,10 @@ int monument_afk_coverage(
     }
 
     // n >= 3: exact full-window scan; the plateau-limited flood fill below would miss optima separated from seeds by a dip
-    if (n >= 3) {
+    // n >= 1: the exact scan handles every size. (The old n<=2 flood shortcut assumed the
+    // box centre fully covers the box - true without the spawn-ring inner edge, false with
+    // it, since blocks within 24 of the point do not spawn.)
+    if (n >= 1) {
         afk_coverage_exact(p, n, minX, minZ, w, h, ax, az, &afk, &cnt);
         if (outX) *outX = afk.x;
         if (outZ) *outZ = afk.z;
@@ -694,47 +705,6 @@ static void dual_field_build(
     }
 }
 
-// Argmax of the field over the candidate rectangle [rx0,rx1]x[rz0,rz1] (absolute inclusive
-// coords, clamped into the window). Returns the first maximum cell in row-major scan order - a
-// REAL cell whose field value equals the return, so coverage identities stay exact. (Plateau
-// averaging is deliberately NOT done here: the averaged centre can drift off the plateau and
-// then covers fewer blocks than the reported best.)
-static int dual_field_best(
-    const int *field,
-    int x0,
-    int z0,
-    int w,
-    int h,
-    int rx0,
-    int rz0,
-    int rx1,
-    int rz1,
-    int *outX,
-    int *outZ)
-{
-    const int xa0 = rx0 > x0 ? rx0 : x0;
-    const int xa1 = rx1 < x0 + w - 1 ? rx1 : x0 + w - 1;
-    const int za0 = rz0 > z0 ? rz0 : z0;
-    const int za1 = rz1 < z0 + h - 1 ? rz1 : z0 + h - 1;
-
-    int best = 0;
-    int bX = x0;
-    int bZ = z0;
-    for (int z = za0; z <= za1; z++) {
-        const int *row = field + (size_t) (z - z0) * w;
-        for (int x = xa0; x <= xa1; x++) {
-            if (row[x - x0] > best) {
-                best = row[x - x0];
-                bX = x;
-                bZ = z;
-            }
-        }
-    }
-    if (outX) *outX = bX;
-    if (outZ) *outZ = bZ;
-    return best;
-}
-
 // Exact union of two points (multiset count) plus the bounding box of the counted blocks
 // (~n*ax*az ops; used for honest evaluation of candidates and the span check).
 typedef struct {
@@ -772,7 +742,7 @@ static void dual_cover_union_info(
                 // in the 128 keep-alive disk of EITHER dummy AND at least 24 blocks from
                 // BOTH dummies (the spawn-ring inner edge)
                 if ((d1 <= AFK_RSQ || d2 <= AFK_RSQ) &&
-                    (d1 >= AFK_INNER_RSQ && d2 >= AFK_INNER_RSQ)) {
+                    (d1 > AFK_INNER_RSQ && d2 > AFK_INNER_RSQ)) {
                     cnt++;
                     int cx = bx + px;
                     int cz = bz + pz;
@@ -799,18 +769,13 @@ static int dual_cover_valid(const DualCoverInfo *ci)
     return ci->x1 - ci->x0 <= DUAL_SPAN_LIMIT && ci->z1 - ci->z0 <= DUAL_SPAN_LIMIT;
 }
 
-static int dual_isqrt_exact(int v)
-{
-    int r = (int) sqrt((double) v);
-    while (r * r > v) r--;
-    while ((r + 1) * (r + 1) <= v) r++;
-    return r;
-}
 
-// Exact span-validity of candidate partner q against the anchor's coverage bbox: computes the
-// exact bbox of q's own coverage with a closed form per box (a box contributes iff the clamped
-// distance to q is <= 128; its covered x-range is |x-qx| <= isqrt(128^2-dzmin^2) clamped to the
-// box, and symmetrically for z), then combines it with the anchor bbox.
+// Exact span-validity of candidate partner q against the anchor's coverage bbox: closed-form
+// per-box bbox of q's coverage (a box contributes iff the clamped distance to q is <= 128; its
+// covered x-range is |x-qx| <= isqrt(128^2-dzmin^2) clamped to the box, and symmetrically for
+// z), then combined with the anchor bbox. Under the ring semantics the counted bbox is the
+// SAME as the 128-coverage bbox (the annulus arcs sit at the row extremes, so any non-empty
+// row spans [qx-R, qx+R]), so this check stays exact.
 static int dual_valid_at(
     const MonumentBlockPos *p,
     int n,
@@ -834,13 +799,19 @@ static int dual_valid_at(
         if (dx * dx + dz * dz > R2)
             continue; // disk does not reach this box
 
-        int r = dual_isqrt_exact(R2 - dz * dz);
+        int v = R2 - dz * dz;
+        int r = (int) sqrt((double) v);
+        while (r * r > v) r--;
+        while ((r + 1) * (r + 1) <= v) r++;
         int lo = bx > qx - r ? bx : qx - r;
         int hi = bxi < qx + r ? bxi : qx + r;
         if (lo < covX0) covX0 = lo;
         if (hi > covX1) covX1 = hi;
 
-        r = dual_isqrt_exact(R2 - dx * dx);
+        v = R2 - dx * dx;
+        r = (int) sqrt((double) v);
+        while (r * r > v) r--;
+        while ((r + 1) * (r + 1) <= v) r++;
         lo = bz > qz - r ? bz : qz - r;
         hi = bzi < qz + r ? bzi : qz + r;
         if (lo < covZ0) covZ0 = lo;
@@ -963,10 +934,8 @@ static int dual_pick_partner(
                 continue;
             if (px >= rx0 && px <= rx1 && pz >= rz0 && pz <= rz1)
                 continue; // safe-rectangle cells are already covered by the argmax above
-            // honest validation outside the safe rectangle: ring-aware union + span
-            DualCoverInfo tmp;
-            dual_cover_union_info(s->p, s->n, s->ax, s->az, ax_, az_, px, pz, &tmp);
-            if (!dual_cover_valid(&tmp))
+            // exact span validity (cheap closed form; see dual_valid_at note)
+            if (!dual_valid_at(s->p, s->n, s->ax, s->az, ca, px, pz))
                 continue;
             gval = v;
             gx = px;
@@ -1090,10 +1059,10 @@ static int dual_solve(
         if (p[i].x > maxX) maxX = p[i].x;
         if (p[i].z > maxZ) maxZ = p[i].z;
     }
-    minX += AFK_BOX_LO(ax);
-    minZ += AFK_BOX_LO(az);
-    maxX += AFK_BOX_HI(ax);
-    maxZ += AFK_BOX_HI(az);
+    minX += AFK_BOX_LO(ax) - DUAL_WIN_PAD;
+    minZ += AFK_BOX_LO(az) - DUAL_WIN_PAD;
+    maxX += AFK_BOX_HI(ax) + DUAL_WIN_PAD;
+    maxZ += AFK_BOX_HI(az) + DUAL_WIN_PAD;
     int w = maxX - minX + 1;
     int h = maxZ - minZ + 1;
 
