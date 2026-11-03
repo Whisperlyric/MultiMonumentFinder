@@ -194,3 +194,11 @@ The batch tab also provides **Pair Level** and **Min Usable Area** settings (sam
 | `monument_search.cpp` / `monument_search_core.c` | C++ search and cubiomes calls / C++ 搜索与 cubiomes 调用                                                                            |
 | `jni/`                                           | JNI glue and CMake target `monumentFinderLibJ`                                                                                 |
 | `cubiomes/`                                      | git submodule ([xpple/cubiomes](https://github.com/xpple/cubiomes))                                                            |
+
+---
+
+## License / 许可
+
+Released under the [MIT License](LICENSE) (upstream DoubleMonumentForFixedSeed by SunnySlopes is MIT; bundled [cubiomes](https://github.com/xpple/cubiomes) is MIT).
+
+基于 [MIT 许可](LICENSE)发布（上游 SunnySlopes 的 DoubleMonumentForFixedSeed 为 MIT；内嵌的 [cubiomes](https://github.com/xpple/cubiomes) 亦为 MIT）。
